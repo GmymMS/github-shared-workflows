@@ -1,0 +1,238 @@
+name: Security Scan (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      # Container scanning
+      dockerfile:
+        description: 'Path to Dockerfile for container scanning'
+        type: string
+        default: 'Dockerfile'
+      image-name:
+        description: 'Name for the built image (for scanning)'
+        type: string
+        required: true
+
+      # Node.js
+      node-version:
+        description: 'Node.js version'
+        type: string
+        default: '20'
+
+      # Toggle scans
+      run-gitleaks:
+        description: 'Run Gitleaks secret scanning'
+        type: boolean
+        default: true
+      run-semgrep:
+        description: 'Run Semgrep SAST'
+        type: boolean
+        default: true
+      run-trivy-deps:
+        description: 'Run Trivy dependency scan'
+        type: boolean
+        default: true
+      run-trivy-container:
+        description: 'Run Trivy container scan'
+        type: boolean
+        default: true
+      run-trivy-iac:
+        description: 'Run Trivy IaC scan'
+        type: boolean
+        default: true
+      run-npm-audit:
+        description: 'Run npm audit'
+        type: boolean
+        default: true
+
+jobs:
+  # Secret scanning - wykrywa przypadkowo commitnięte sekrety
+  gitleaks:
+    name: Gitleaks - Secret Scanning
+    runs-on: ubuntu-latest
+    if: ${{ inputs.run-gitleaks }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # SAST - statyczna analiza kodu
+  semgrep:
+    name: Semgrep - SAST
+    runs-on: ubuntu-latest
+    if: ${{ inputs.run-semgrep }}
+    container:
+      image: semgrep/semgrep
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        run: semgrep scan --config auto --error --json --output semgrep-results.json .
+
+      - name: Upload Semgrep results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: semgrep-results
+          path: semgrep-results.json
+
+  # Dependency scanning - sprawdza podatności w zależnościach
+  trivy-deps:
+    name: Trivy - Dependency Scan
+    runs-on: ubuntu-latest
+    if: ${{ inputs.run-trivy-deps }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Fresh install dependencies
+        run: npm ci
+
+      - name: Run Trivy vulnerability scanner (filesystem)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+          trivyignores: '.trivyignore'
+
+      - name: Run Trivy and save results
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'json'
+          output: 'trivy-fs-results.json'
+          ignore-unfixed: true
+          trivyignores: '.trivyignore'
+
+      - name: Upload Trivy results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trivy-fs-results
+          path: trivy-fs-results.json
+
+  # Container scanning - sprawdza obrazy Docker
+  trivy-container:
+    name: Trivy - Container Scan
+    runs-on: ubuntu-latest
+    if: ${{ inputs.run-trivy-container }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build image for scanning
+        run: docker build -f ${{ inputs.dockerfile }} -t ${{ inputs.image-name }}:scan .
+
+      - name: Run Trivy container scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ inputs.image-name }}:scan'
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+          trivyignores: '.trivyignore'
+
+      - name: Run Trivy and save results
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ inputs.image-name }}:scan'
+          format: 'json'
+          output: 'trivy-container-results.json'
+          ignore-unfixed: true
+          trivyignores: '.trivyignore'
+
+      - name: Upload Trivy container results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trivy-container-results
+          path: trivy-container-results.json
+
+  # IaC scanning - sprawdza konfigurację Docker/Terraform
+  trivy-iac:
+    name: Trivy - IaC Scan
+    runs-on: ubuntu-latest
+    if: ${{ inputs.run-trivy-iac }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy IaC scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          scan-ref: '.'
+          format: 'table'
+          exit-code: '1'
+          severity: 'CRITICAL,HIGH'
+
+  # npm audit - wbudowany skaner npm
+  npm-audit:
+    name: npm audit
+    runs-on: ubuntu-latest
+    if: ${{ inputs.run-npm-audit }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run npm audit
+        run: npm audit --audit-level=high
+
+      - name: Run npm audit (JSON)
+        run: npm audit --json > npm-audit-results.json || true
+
+      - name: Upload npm audit results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: npm-audit-results
+          path: npm-audit-results.json
+
+  # Podsumowanie wyników
+  summary:
+    name: Security Summary
+    runs-on: ubuntu-latest
+    needs: [gitleaks, semgrep, trivy-deps, trivy-container, trivy-iac, npm-audit]
+    if: always()
+    steps:
+      - name: Security Scan Summary
+        run: |
+          echo "## Security Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Scanner | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Gitleaks (Secrets) | ${{ needs.gitleaks.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Semgrep (SAST) | ${{ needs.semgrep.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Trivy (Dependencies) | ${{ needs.trivy-deps.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Trivy (Container) | ${{ needs.trivy-container.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Trivy (IaC) | ${{ needs.trivy-iac.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| npm audit | ${{ needs.npm-audit.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Check artifacts for detailed reports." >> $GITHUB_STEP_SUMMARY
