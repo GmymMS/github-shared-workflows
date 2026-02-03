@@ -20,8 +20,8 @@ on:
         default: '20'
 
       # Toggle scans
-      run-gitleaks:
-        description: 'Run Gitleaks secret scanning'
+      run-trufflehog:
+        description: 'Run TruffleHog secret scanning'
         type: boolean
         default: true
       run-semgrep:
@@ -47,20 +47,20 @@ on:
 
 jobs:
   # Secret scanning - wykrywa przypadkowo commitnięte sekrety
-  gitleaks:
-    name: Gitleaks - Secret Scanning
+  trufflehog:
+    name: TruffleHog - Secret Scanning
     runs-on: ubuntu-latest
-    if: ${{ inputs.run-gitleaks }}
+    if: ${{ inputs.run-trufflehog }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Run Gitleaks
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run TruffleHog
+        uses: trufflesecurity/trufflehog@main
+        with:
+          extra_args: --only-verified
 
   # SAST - statyczna analiza kodu
   semgrep:
@@ -219,7 +219,7 @@ jobs:
   summary:
     name: Security Summary
     runs-on: ubuntu-latest
-    needs: [gitleaks, semgrep, trivy-deps, trivy-container, trivy-iac, npm-audit]
+    needs: [trufflehog, semgrep, trivy-deps, trivy-container, trivy-iac, npm-audit]
     if: always()
     steps:
       - name: Security Scan Summary
@@ -228,7 +228,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Scanner | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|---------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Gitleaks (Secrets) | ${{ needs.gitleaks.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| TruffleHog (Secrets) | ${{ needs.trufflehog.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Semgrep (SAST) | ${{ needs.semgrep.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Trivy (Dependencies) | ${{ needs.trivy-deps.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Trivy (Container) | ${{ needs.trivy-container.result }} |" >> $GITHUB_STEP_SUMMARY
