@@ -124,9 +124,13 @@ jobs:
             done
 
             # Run Prisma migrations if enabled (FR-022)
+            # Use docker exec (not docker compose exec) to avoid compose
+            # re-evaluating ${POSTGRES_PASSWORD} without Doppler, which
+            # produces a malformed DATABASE_URL and breaks the migration.
             if [ "${{ inputs.run-migrations }}" = "true" ]; then
               echo "Running database migrations..."
-              if ! docker compose -f docker-compose.prod.yml exec -T ${{ inputs.container-name }} node node_modules/prisma/build/index.js migrate deploy; then
+              CONTAINER_ID=$(docker compose -f docker-compose.prod.yml ps -q ${{ inputs.container-name }})
+              if ! docker exec "$CONTAINER_ID" node node_modules/prisma/build/index.js migrate deploy; then
                 echo "Migration failed — rolling back"
                 docker compose -f docker-compose.prod.yml restart ${{ inputs.container-name }}
                 exit 1
