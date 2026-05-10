@@ -73,6 +73,8 @@ on:
         required: true
       DOPPLER_TOKEN:
         required: true
+      GHCR_TOKEN:
+        required: true
       SENTRY_AUTH_TOKEN:
         required: false
 
@@ -80,9 +82,6 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
-    permissions:
-      contents: read
-      packages: write
 
     steps:
       - name: Checkout
@@ -111,7 +110,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ github.token }}
+          password: ${{ secrets.GHCR_TOKEN }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -126,20 +125,17 @@ jobs:
 
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1
-        env:
-          GHCR_TOKEN: ${{ github.token }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: 22022
-          envs: GHCR_TOKEN
           script: |
             set -e
             cd ${{ inputs.vps-app-dir }}
 
             # Pull new image
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            echo ${{ secrets.GHCR_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker pull ghcr.io/${{ steps.tag.outputs.owner }}/${{ inputs.image-name }}:${{ steps.tag.outputs.tag }}
             docker tag ghcr.io/${{ steps.tag.outputs.owner }}/${{ inputs.image-name }}:${{ steps.tag.outputs.tag }} \
                        ghcr.io/${{ steps.tag.outputs.owner }}/${{ inputs.image-name }}:latest
