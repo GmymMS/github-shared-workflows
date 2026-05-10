@@ -29,6 +29,11 @@ on:
         type: boolean
         default: false
         description: "Run 'npx prisma migrate deploy' inside the container after health check passes"
+      environment:
+        required: false
+        type: string
+        default: ""
+        description: "GitHub environment name for secret scoping (e.g. production, staging)"
     secrets:
       VPS_HOST:
         required: true
@@ -44,6 +49,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
 
     steps:
       - name: Checkout
