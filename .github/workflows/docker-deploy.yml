@@ -20,6 +20,16 @@ on:
         type: string
         default: "/api/health"
         description: "HTTP path for post-deploy health check"
+      host-port:
+        required: false
+        type: string
+        default: "3005"
+        description: "Host port the container is mapped to (for health check curl)"
+      compose-file:
+        required: false
+        type: string
+        default: "docker-compose.prod.yml"
+        description: "Docker Compose file name inside vps-app-dir"
       node-version:
         required: false
         type: string
@@ -29,6 +39,26 @@ on:
         type: boolean
         default: false
         description: "Run 'npx prisma migrate deploy' inside the container after health check passes"
+      run-seed:
+        required: false
+        type: boolean
+        default: false
+        description: "Run 'npx prisma db seed' inside the container after migrations (QA only)"
+      app-version:
+        required: false
+        type: string
+        default: ""
+        description: "Version identifier injected as NEXT_PUBLIC_APP_VERSION Docker build arg"
+      sentry-org:
+        required: false
+        type: string
+        default: ""
+        description: "Sentry organization slug for release event (skipped if empty)"
+      sentry-project:
+        required: false
+        type: string
+        default: ""
+        description: "Sentry project slug for release event (skipped if empty)"
       environment:
         required: false
         type: string
@@ -45,6 +75,8 @@ on:
         required: true
       GHCR_TOKEN:
         required: true
+      SENTRY_AUTH_TOKEN:
+        required: false
 
 jobs:
   deploy:
@@ -85,6 +117,8 @@ jobs:
         with:
           context: .
           push: true
+          build-args: |
+            NEXT_PUBLIC_APP_VERSION=${{ inputs.app-version }}
           tags: |
             ghcr.io/${{ steps.tag.outputs.owner }}/${{ inputs.image-name }}:${{ steps.tag.outputs.tag }}
             ghcr.io/${{ steps.tag.outputs.owner }}/${{ inputs.image-name }}:latest
@@ -107,35 +141,43 @@ jobs:
                        ghcr.io/${{ steps.tag.outputs.owner }}/${{ inputs.image-name }}:latest
 
             # Deploy via Doppler (injects all secrets at runtime)
-            doppler run -- docker compose -f docker-compose.prod.yml up -d --remove-orphans
+            doppler run -- docker compose -f ${{ inputs.compose-file }} up -d --remove-orphans
 
             # Health check (5 retries x 10s)
             for i in 1 2 3 4 5; do
               sleep 10
-              if curl -sf http://localhost:3005${{ inputs.health-check-path }}; then
+              if curl -sf http://localhost:${{ inputs.host-port }}${{ inputs.health-check-path }}; then
                 echo "Health check passed on attempt $i"
                 break
               fi
               if [ $i -eq 5 ]; then
                 echo "Health check failed after 5 attempts — rolling back"
-                docker compose -f docker-compose.prod.yml restart ${{ inputs.container-name }}
+                docker compose -f ${{ inputs.compose-file }} restart ${{ inputs.container-name }}
                 exit 1
               fi
             done
 
-            # Run Prisma migrations if enabled (FR-022)
+            # Run Prisma migrations if enabled
             # Use docker exec (not docker compose exec) to avoid compose
             # re-evaluating ${POSTGRES_PASSWORD} without Doppler, which
             # produces a malformed DATABASE_URL and breaks the migration.
             if [ "${{ inputs.run-migrations }}" = "true" ]; then
               echo "Running database migrations..."
-              CONTAINER_ID=$(docker compose -f docker-compose.prod.yml ps -q ${{ inputs.container-name }})
+              CONTAINER_ID=$(docker compose -f ${{ inputs.compose-file }} ps -q ${{ inputs.container-name }})
               if ! docker exec "$CONTAINER_ID" node node_modules/prisma/build/index.js migrate deploy; then
                 echo "Migration failed — rolling back"
-                docker compose -f docker-compose.prod.yml restart ${{ inputs.container-name }}
+                docker compose -f ${{ inputs.compose-file }} restart ${{ inputs.container-name }}
                 exit 1
               fi
               echo "Migrations applied successfully"
+            fi
+
+            # Seed QA database if enabled (never runs in production)
+            if [ "${{ inputs.run-seed }}" = "true" ]; then
+              echo "Seeding QA database..."
+              CONTAINER_ID=$(docker compose -f ${{ inputs.compose-file }} ps -q ${{ inputs.container-name }})
+              docker exec "$CONTAINER_ID" npx prisma db seed
+              echo "Seed complete"
             fi
 
             # Prune old images (keep 3 most recent)
@@ -144,3 +186,19 @@ jobs:
               xargs -r docker rmi || true
 
             echo "Deploy complete: ${{ steps.tag.outputs.tag }}"
+
+      - name: Create Sentry release
+        if: ${{ inputs.app-version != '' && inputs.sentry-org != '' && inputs.sentry-project != '' }}
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: |
+          if [ -z "$SENTRY_AUTH_TOKEN" ]; then
+            echo "Sentry release skipped — SENTRY_AUTH_TOKEN not set"
+            exit 0
+          fi
+          curl -sf -X POST "https://sentry.io/api/0/organizations/${{ inputs.sentry-org }}/releases/" \
+            -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"version\":\"${{ inputs.app-version }}\",\"projects\":[\"${{ inputs.sentry-project }}\"],\"ref\":\"$GITHUB_SHA\"}" \
+            || echo "Sentry release API call failed — continuing"
+          echo "Sentry release created: ${{ inputs.app-version }}"
