@@ -126,7 +126,7 @@ jobs:
             # Run Prisma migrations if enabled (FR-022)
             if [ "${{ inputs.run-migrations }}" = "true" ]; then
               echo "Running database migrations..."
-              if ! docker compose -f docker-compose.prod.yml exec -T ${{ inputs.container-name }} ./node_modules/.bin/prisma migrate deploy; then
+              if ! docker compose -f docker-compose.prod.yml exec -T ${{ inputs.container-name }} node node_modules/prisma/build/index.js migrate deploy; then
                 echo "Migration failed — rolling back"
                 docker compose -f docker-compose.prod.yml restart ${{ inputs.container-name }}
                 exit 1
