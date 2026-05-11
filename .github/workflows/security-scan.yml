@@ -77,7 +77,7 @@ jobs:
         run: semgrep scan --config auto --error --json --output semgrep-results.json .
 
       - name: Upload Semgrep results
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: semgrep-results
@@ -122,7 +122,7 @@ jobs:
           trivyignores: '.trivyignore'
 
       - name: Upload Trivy results
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: trivy-fs-results
@@ -160,7 +160,7 @@ jobs:
           trivyignores: '.trivyignore'
 
       - name: Upload Trivy container results
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: trivy-container-results
@@ -209,7 +209,7 @@ jobs:
         run: npm audit --json > npm-audit-results.json || true
 
       - name: Upload npm audit results
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: npm-audit-results
