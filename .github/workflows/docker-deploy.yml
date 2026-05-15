@@ -132,6 +132,16 @@ jobs:
             ghcr.io/${{ steps.tag.outputs.owner }}/${{ inputs.image-name }}:${{ steps.tag.outputs.tag }}
             ghcr.io/${{ steps.tag.outputs.owner }}/${{ inputs.image-name }}:latest
 
+      - name: Copy compose file to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: 22022
+          source: ${{ inputs.compose-file }}
+          target: ${{ inputs.vps-app-dir }}/
+
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1
         env:
