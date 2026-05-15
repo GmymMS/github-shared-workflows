@@ -124,6 +124,7 @@ jobs:
           push: true
           build-args: |
             NEXT_PUBLIC_APP_VERSION=${{ inputs.app-version }}
+          secrets: |
             GH_NPM_TOKEN=${{ secrets.GH_NPM_TOKEN }}
           tags: |
             ghcr.io/${{ steps.tag.outputs.owner }}/${{ inputs.image-name }}:${{ steps.tag.outputs.tag }}
