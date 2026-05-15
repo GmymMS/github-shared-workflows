@@ -79,6 +79,8 @@ on:
         required: false
       GH_NPM_TOKEN:
         required: true
+      NEXT_PUBLIC_SENTRY_DSN:
+        required: false
 
 jobs:
   deploy:
@@ -126,8 +128,11 @@ jobs:
           push: true
           secrets: |
             GH_NPM_TOKEN=${{ secrets.GH_NPM_TOKEN }}
+            SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
           build-args: |
             NEXT_PUBLIC_APP_VERSION=${{ inputs.app-version }}
+            NEXT_PUBLIC_SENTRY_DSN=${{ secrets.NEXT_PUBLIC_SENTRY_DSN }}
+            NEXT_PUBLIC_SENTRY_ENV=${{ inputs.environment }}
           tags: |
             ghcr.io/${{ steps.tag.outputs.owner }}/${{ inputs.image-name }}:${{ steps.tag.outputs.tag }}
             ghcr.io/${{ steps.tag.outputs.owner }}/${{ inputs.image-name }}:latest
