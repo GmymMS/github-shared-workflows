@@ -52,7 +52,7 @@ jobs:
   # Secret scanning - wykrywa przypadkowo commitnięte sekrety
   trufflehog:
     name: TruffleHog - Secret Scanning
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     if: ${{ inputs.run-trufflehog }}
     steps:
       - name: Checkout code
@@ -68,7 +68,7 @@ jobs:
   # SAST - statyczna analiza kodu
   semgrep:
     name: Semgrep - SAST
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     if: ${{ inputs.run-semgrep }}
     container:
       image: semgrep/semgrep
@@ -89,7 +89,7 @@ jobs:
   # Dependency scanning - sprawdza podatności w zależnościach
   trivy-deps:
     name: Trivy - Dependency Scan
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     if: ${{ inputs.run-trivy-deps }}
     steps:
       - name: Checkout code
@@ -136,7 +136,7 @@ jobs:
   # Container scanning - sprawdza obrazy Docker
   trivy-container:
     name: Trivy - Container Scan
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     if: ${{ inputs.run-trivy-container }}
     steps:
       - name: Checkout code
@@ -181,7 +181,7 @@ jobs:
   # IaC scanning - sprawdza konfigurację Docker/Terraform
   trivy-iac:
     name: Trivy - IaC Scan
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     if: ${{ inputs.run-trivy-iac }}
     steps:
       - name: Checkout code
@@ -199,7 +199,7 @@ jobs:
   # npm audit - wbudowany skaner npm
   npm-audit:
     name: npm audit
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     if: ${{ inputs.run-npm-audit }}
     steps:
       - name: Checkout code
@@ -232,7 +232,7 @@ jobs:
   # Podsumowanie wyników
   summary:
     name: Security Summary
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: [trufflehog, semgrep, trivy-deps, trivy-container, trivy-iac, npm-audit]
     if: always()
     steps:
