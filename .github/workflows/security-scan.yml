@@ -46,7 +46,7 @@ on:
         default: true
     secrets:
       GH_NPM_TOKEN:
-        required: true
+        required: false
 
 jobs:
   # Secret scanning - wykrywa przypadkowo commitnięte sekrety
