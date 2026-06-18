@@ -69,7 +69,8 @@ jobs:
   semgrep:
     name: Semgrep - SAST
     runs-on: self-hosted
-    if: ${{ inputs.run-semgrep }}
+    needs: [trufflehog]
+    if: ${{ always() && inputs.run-semgrep }}
     container:
       image: semgrep/semgrep
     steps:
@@ -90,7 +91,8 @@ jobs:
   trivy-deps:
     name: Trivy - Dependency Scan
     runs-on: self-hosted
-    if: ${{ inputs.run-trivy-deps }}
+    needs: [semgrep]
+    if: ${{ always() && inputs.run-trivy-deps }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -137,7 +139,8 @@ jobs:
   trivy-container:
     name: Trivy - Container Scan
     runs-on: self-hosted
-    if: ${{ inputs.run-trivy-container }}
+    needs: [trivy-deps]
+    if: ${{ always() && inputs.run-trivy-container }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -182,7 +185,8 @@ jobs:
   trivy-iac:
     name: Trivy - IaC Scan
     runs-on: self-hosted
-    if: ${{ inputs.run-trivy-iac }}
+    needs: [trivy-container]
+    if: ${{ always() && inputs.run-trivy-iac }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -200,7 +204,8 @@ jobs:
   npm-audit:
     name: npm audit
     runs-on: self-hosted
-    if: ${{ inputs.run-npm-audit }}
+    needs: [trivy-iac]
+    if: ${{ always() && inputs.run-npm-audit }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
