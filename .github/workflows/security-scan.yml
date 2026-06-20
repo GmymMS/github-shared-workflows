@@ -164,6 +164,10 @@ jobs:
           ignore-unfixed: true
           severity: 'CRITICAL,HIGH'
           trivyignores: '.trivyignore'
+          # Vuln-only: image secret-scan is the slow part and overlaps TruffleHog.
+          # Bump timeout — default 5m was being eaten by slow DB pulls (context deadline exceeded).
+          scanners: 'vuln'
+          timeout: '15m0s'
 
       - name: Run Trivy and save results
         uses: aquasecurity/trivy-action@master
@@ -173,6 +177,8 @@ jobs:
           output: 'trivy-container-results.json'
           ignore-unfixed: true
           trivyignores: '.trivyignore'
+          scanners: 'vuln'
+          timeout: '15m0s'
 
       - name: Upload Trivy container results
         uses: actions/upload-artifact@v7
