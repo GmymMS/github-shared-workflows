@@ -148,6 +148,10 @@ jobs:
     name: Trivy - Container Scan
     runs-on: ${{ inputs.scan-runner }}
     if: ${{ inputs.run-trivy-container }}
+    permissions:
+      contents: read
+      # Pull the pre-built private image from GHCR using the auto-minted token.
+      packages: read
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -168,7 +172,9 @@ jobs:
       - name: Pull pre-built image for scanning
         if: ${{ inputs.scan-image-ref != '' }}
         run: |
-          echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          # Use the workflow's auto-minted GITHUB_TOKEN (needs packages: read,
+          # granted on this job) — no standalone GHCR_TOKEN secret required.
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
           docker pull ${{ inputs.scan-image-ref }}
 
       - name: Run Trivy container scanner
