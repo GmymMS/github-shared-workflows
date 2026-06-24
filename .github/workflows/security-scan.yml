@@ -44,15 +44,25 @@ on:
         description: 'Run npm audit'
         type: boolean
         default: true
+      scan-image-ref:
+        description: 'Full ref of an already-pushed image to scan (e.g. ghcr.io/owner/admio:sha-abc123). When set, the container job scans this exact image instead of building a throwaway :scan image.'
+        type: string
+        default: ''
+      scan-runner:
+        description: 'Runner label for the scan jobs. Defaults to GitHub-hosted ubuntu-latest so each scan gets an isolated workspace (a single self-hosted runner shares one workspace, and a container-based job checking out as root leaves files a later host job cannot git-clean).'
+        type: string
+        default: 'ubuntu-latest'
     secrets:
       GH_NPM_TOKEN:
+        required: false
+      GHCR_TOKEN:
         required: false
 
 jobs:
   # Secret scanning - wykrywa przypadkowo commitnięte sekrety
   trufflehog:
     name: TruffleHog - Secret Scanning
-    runs-on: self-hosted
+    runs-on: ${{ inputs.scan-runner }}
     if: ${{ inputs.run-trufflehog }}
     steps:
       - name: Checkout code
@@ -68,9 +78,8 @@ jobs:
   # SAST - statyczna analiza kodu
   semgrep:
     name: Semgrep - SAST
-    runs-on: self-hosted
-    needs: [trufflehog]
-    if: ${{ always() && inputs.run-semgrep }}
+    runs-on: ${{ inputs.scan-runner }}
+    if: ${{ inputs.run-semgrep }}
     container:
       image: semgrep/semgrep
     steps:
@@ -90,9 +99,8 @@ jobs:
   # Dependency scanning - sprawdza podatności w zależnościach
   trivy-deps:
     name: Trivy - Dependency Scan
-    runs-on: self-hosted
-    needs: [semgrep]
-    if: ${{ always() && inputs.run-trivy-deps }}
+    runs-on: ${{ inputs.scan-runner }}
+    if: ${{ inputs.run-trivy-deps }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -138,14 +146,15 @@ jobs:
   # Container scanning - sprawdza obrazy Docker
   trivy-container:
     name: Trivy - Container Scan
-    runs-on: self-hosted
-    needs: [trivy-deps]
-    if: ${{ always() && inputs.run-trivy-container }}
+    runs-on: ${{ inputs.scan-runner }}
+    if: ${{ inputs.run-trivy-container }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
 
+      # Default path: build a throwaway image from source and scan it.
       - name: Build image for scanning
+        if: ${{ inputs.scan-image-ref == '' }}
         run: |
           echo "$GH_NPM_TOKEN" > /tmp/gh_npm_token
           docker build -f ${{ inputs.dockerfile }} \
@@ -155,10 +164,17 @@ jobs:
         env:
           GH_NPM_TOKEN: ${{ secrets.GH_NPM_TOKEN }}
 
+      # Build-once path: pull the exact already-pushed image and scan that.
+      - name: Pull pre-built image for scanning
+        if: ${{ inputs.scan-image-ref != '' }}
+        run: |
+          echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          docker pull ${{ inputs.scan-image-ref }}
+
       - name: Run Trivy container scanner
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: '${{ inputs.image-name }}:scan'
+          image-ref: ${{ inputs.scan-image-ref != '' && inputs.scan-image-ref || format('{0}:scan', inputs.image-name) }}
           format: 'table'
           exit-code: '1'
           ignore-unfixed: true
@@ -172,7 +188,7 @@ jobs:
       - name: Run Trivy and save results
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: '${{ inputs.image-name }}:scan'
+          image-ref: ${{ inputs.scan-image-ref != '' && inputs.scan-image-ref || format('{0}:scan', inputs.image-name) }}
           format: 'json'
           output: 'trivy-container-results.json'
           ignore-unfixed: true
@@ -190,9 +206,8 @@ jobs:
   # IaC scanning - sprawdza konfigurację Docker/Terraform
   trivy-iac:
     name: Trivy - IaC Scan
-    runs-on: self-hosted
-    needs: [trivy-container]
-    if: ${{ always() && inputs.run-trivy-iac }}
+    runs-on: ${{ inputs.scan-runner }}
+    if: ${{ inputs.run-trivy-iac }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -209,9 +224,8 @@ jobs:
   # npm audit - wbudowany skaner npm
   npm-audit:
     name: npm audit
-    runs-on: self-hosted
-    needs: [trivy-iac]
-    if: ${{ always() && inputs.run-npm-audit }}
+    runs-on: ${{ inputs.scan-runner }}
+    if: ${{ inputs.run-npm-audit }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -243,7 +257,7 @@ jobs:
   # Podsumowanie wyników
   summary:
     name: Security Summary
-    runs-on: self-hosted
+    runs-on: ${{ inputs.scan-runner }}
     needs: [trufflehog, semgrep, trivy-deps, trivy-container, trivy-iac, npm-audit]
     if: always()
     steps:
