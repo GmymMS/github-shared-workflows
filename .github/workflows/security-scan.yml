@@ -159,6 +159,26 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
+      # App images here are large (e.g. Playwright + LibreOffice + OCR). Building
+      # them and having Trivy decompress every layer can exhaust the ~14 GB free
+      # on GitHub-hosted runners, surfacing as a Trivy FATAL
+      # "failed to analyze layer: unable to get uncompressed layer". Reclaim space
+      # from preinstalled toolchains we never use. Guarded so it's a harmless
+      # no-op on self-hosted runners that lack these paths.
+      - name: Free up disk space
+        run: |
+          echo "Disk before cleanup:"; df -h / || true
+          sudo rm -rf \
+            /opt/hostedtoolcache \
+            /usr/local/lib/android \
+            /usr/share/dotnet \
+            /usr/local/.ghcup \
+            /opt/ghc \
+            /usr/local/share/powershell \
+            /usr/share/swift 2>/dev/null || true
+          sudo docker image prune -af 2>/dev/null || true
+          echo "Disk after cleanup:"; df -h / || true
+
       # Default path: build a throwaway image from source and scan it.
       - name: Build image for scanning
         if: ${{ inputs.scan-image-ref == '' }}
