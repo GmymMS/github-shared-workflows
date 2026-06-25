@@ -52,6 +52,10 @@ on:
         description: 'Runner label for the scan jobs. Defaults to GitHub-hosted ubuntu-latest so each scan gets an isolated workspace (a single self-hosted runner shares one workspace, and a container-based job checking out as root leaves files a later host job cannot git-clean).'
         type: string
         default: 'ubuntu-latest'
+      environment:
+        description: 'GitHub environment to scope the container job to, so it can read an environment-scoped GHCR_TOKEN when pulling a pre-built private image (e.g. qa, production). Leave empty for no environment.'
+        type: string
+        default: ''
     secrets:
       GH_NPM_TOKEN:
         required: false
@@ -147,11 +151,10 @@ jobs:
   trivy-container:
     name: Trivy - Container Scan
     runs-on: ${{ inputs.scan-runner }}
+    # Scope to the caller's environment so GHCR_TOKEN (an environment secret) is
+    # available when pulling a pre-built private image via scan-image-ref.
+    environment: ${{ inputs.environment }}
     if: ${{ inputs.run-trivy-container }}
-    permissions:
-      contents: read
-      # Pull the pre-built private image from GHCR using the auto-minted token.
-      packages: read
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -172,9 +175,7 @@ jobs:
       - name: Pull pre-built image for scanning
         if: ${{ inputs.scan-image-ref != '' }}
         run: |
-          # Use the workflow's auto-minted GITHUB_TOKEN (needs packages: read,
-          # granted on this job) — no standalone GHCR_TOKEN secret required.
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
           docker pull ${{ inputs.scan-image-ref }}
 
       - name: Run Trivy container scanner
