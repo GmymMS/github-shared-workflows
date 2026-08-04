@@ -96,6 +96,12 @@ jobs:
   deploy:
     runs-on: self-hosted
     environment: ${{ inputs.environment }}
+    # Bez tego job leci na domyślnych 360 min. Na self-hosted runnerze (jeden na
+    # organizację) zawieszony deploy blokuje WSZYSTKO, co czeka w kolejce — crony
+    # też. Incydent 2026-08-04: push do GHCR stanął bez ruchu i bez błędu na ~21 min
+    # (obraz był już zbudowany lokalnie), a za jobem ustawiły się crony. Limit
+    # zamienia cichy zwis w czytelną porażkę i zwalnia runnera.
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: read
@@ -136,6 +142,9 @@ jobs:
 
       - name: Build and push Docker image
         if: ${{ inputs.build }}
+        # Węższy limit niż job: to TU zwisa push do rejestru, a reszta joba (deploy
+        # na VPS, migracje, seed, health-check) ma zostać z zapasem czasu.
+        timeout-minutes: 30
         uses: docker/build-push-action@v5
         with:
           context: .
