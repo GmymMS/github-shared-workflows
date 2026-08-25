@@ -49,7 +49,7 @@ on:
         type: string
         default: ''
       scan-runner:
-        description: 'Runner label for the scan jobs. Defaults to GitHub-hosted ubuntu-latest so each scan gets an isolated workspace (a single self-hosted runner shares one workspace, and a container-based job checking out as root leaves files a later host job cannot git-clean).'
+        description: 'Runner label for the scan jobs. Defaults to GitHub-hosted ubuntu-latest so each scan gets an isolated workspace (a single self-hosted runner shares one workspace, and a container-based job checking out as root leaves files a later host job cannot git-clean). SAFE TO SET TO self-hosted for a call that runs the container scan alone (run-semgrep: false) — semgrep is the only container-based job, so without it nothing checks out as root. That is the shape deploy-qa uses to keep the per-commit image scan off billable minutes.'
         type: string
         default: 'ubuntu-latest'
       environment:
@@ -67,6 +67,7 @@ jobs:
   trufflehog:
     name: TruffleHog - Secret Scanning
     runs-on: ${{ inputs.scan-runner }}
+    timeout-minutes: 10
     if: ${{ inputs.run-trufflehog }}
     steps:
       - name: Checkout code
@@ -83,6 +84,7 @@ jobs:
   semgrep:
     name: Semgrep - SAST
     runs-on: ${{ inputs.scan-runner }}
+    timeout-minutes: 20
     if: ${{ inputs.run-semgrep }}
     container:
       image: semgrep/semgrep
@@ -104,6 +106,7 @@ jobs:
   trivy-deps:
     name: Trivy - Dependency Scan
     runs-on: ${{ inputs.scan-runner }}
+    timeout-minutes: 20
     if: ${{ inputs.run-trivy-deps }}
     steps:
       - name: Checkout code
@@ -151,6 +154,7 @@ jobs:
   trivy-container:
     name: Trivy - Container Scan
     runs-on: ${{ inputs.scan-runner }}
+    timeout-minutes: 45
     # Scope to the caller's environment so GHCR_TOKEN (an environment secret) is
     # available when pulling a pre-built private image via scan-image-ref.
     environment: ${{ inputs.environment }}
@@ -163,9 +167,17 @@ jobs:
       # them and having Trivy decompress every layer can exhaust the ~14 GB free
       # on GitHub-hosted runners, surfacing as a Trivy FATAL
       # "failed to analyze layer: unable to get uncompressed layer". Reclaim space
-      # from preinstalled toolchains we never use. Guarded so it's a harmless
-      # no-op on self-hosted runners that lack these paths.
+      # from preinstalled toolchains we never use.
+      #
+      # GITHUB-HOSTED ONLY — and this guard is load-bearing, not hygiene. A GitHub
+      # runner is a throwaway VM, so `docker image prune -af` there costs nothing.
+      # A self-hosted runner is somebody's real machine: in GmymMS it is the VPS that
+      # also runs the QA and production containers. There, `prune -af` deletes every
+      # image not held by a RUNNING container — including the previous `sha-<commit>`
+      # kept for rollback, and including the image of any container that happens to be
+      # stopped mid-deploy. `runner.environment` is 'github-hosted' | 'self-hosted'.
       - name: Free up disk space
+        if: runner.environment == 'github-hosted'
         run: |
           echo "Disk before cleanup:"; df -h / || true
           sudo rm -rf \
@@ -234,6 +246,7 @@ jobs:
   trivy-iac:
     name: Trivy - IaC Scan
     runs-on: ${{ inputs.scan-runner }}
+    timeout-minutes: 10
     if: ${{ inputs.run-trivy-iac }}
     steps:
       - name: Checkout code
@@ -252,6 +265,7 @@ jobs:
   npm-audit:
     name: npm audit
     runs-on: ${{ inputs.scan-runner }}
+    timeout-minutes: 15
     if: ${{ inputs.run-npm-audit }}
     steps:
       - name: Checkout code
@@ -285,6 +299,7 @@ jobs:
   summary:
     name: Security Summary
     runs-on: ${{ inputs.scan-runner }}
+    timeout-minutes: 5
     needs: [trufflehog, semgrep, trivy-deps, trivy-container, trivy-iac, npm-audit]
     if: always()
     steps:
