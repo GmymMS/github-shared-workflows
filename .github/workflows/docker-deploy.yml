@@ -149,6 +149,22 @@ jobs:
         with:
           context: .
           push: true
+          # `pull: true` — ZAWSZE sięgnij po świeży obraz bazowy zamiast brać go z cache.
+          #
+          # Bez tego łatka bezpieczeństwa w Dockerfile przestaje działać w dniu, w którym jej
+          # warstwa wpadnie do cache — czyli po pierwszym zbudowaniu. Obraz admio ma
+          # `RUN apk upgrade --no-cache libcrypto3 libssl3` w obu etapach, a w logu builda stoi
+          # `#8 CACHED`: `--no-cache` to flaga APK (nie trzymaj indeksu pakietów), nie Dockera,
+          # więc warstwa liczy się z samej treści instrukcji i ta się nie zmienia. Łatka chroniła
+          # wyłącznie przed podatnościami znanymi w dniu, w którym powstała ta warstwa.
+          # Wyszło dopiero na CVE-2026-14456 w openssl (GmymMS/admio#533) — wcześniej wynik był
+          # nieodróżnialny od poprawnego.
+          #
+          # Świeży digest obrazu bazowego unieważnia CAŁY łańcuch warstw, więc `apk upgrade`
+          # wykonuje się realnie, a przy okazji wchodzą łatki pakietów, których nie wymieniliśmy
+          # z imienia. Gdy baza się nie zmieniła, cache działa jak dotąd — koszt jest tylko wtedy,
+          # gdy faktycznie jest co pobrać.
+          pull: true
           secrets: |
             GH_NPM_TOKEN=${{ secrets.GH_NPM_TOKEN }}
             SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
