@@ -38,12 +38,12 @@ on:
         required: false
         type: boolean
         default: false
-        description: "Run 'npx prisma migrate deploy' inside the container after health check passes"
+        description: "Run 'prisma migrate deploy' inside the container after health check passes"
       run-seed:
         required: false
         type: boolean
         default: false
-        description: "Run 'npx prisma db seed' inside the container after migrations (QA only)"
+        description: "Run 'prisma db seed' inside the container after migrations (QA only)"
       app-version:
         required: false
         type: string
@@ -242,10 +242,20 @@ jobs:
             fi
 
             # Seed QA database if enabled (never runs in production)
+            #
+            # `node .../index.js db seed` instead of `npx prisma db seed`: the runtime image has
+            # no reason to carry npm/npx (admio#580), and removing it breaks this line specifically
+            # — `prisma db seed` shells out to the configured seed command (e.g. `tsx prisma/seed.ts`)
+            # by NAME, relying on PATH to resolve it. `npx` used to supply that by prepending
+            # `node_modules/.bin` to PATH; without it the seed command gets `spawn tsx ENOENT`
+            # (verified empirically: a stripped-npm image reproduces this, and prepending
+            # `node_modules/.bin` to PATH fixes it — `preferLocal` in Prisma's own execa call is
+            # NOT enough on its own). `migrate deploy` above needs none of this: it never shells
+            # out to a second command.
             if [ "${{ inputs.run-seed }}" = "true" ]; then
               echo "Seeding QA database..."
               CONTAINER_ID=$(docker compose -f ${{ inputs.compose-file }} ps -q ${{ inputs.container-name }})
-              docker exec "$CONTAINER_ID" npx prisma db seed
+              docker exec "$CONTAINER_ID" sh -c 'PATH="$PWD/node_modules/.bin:$PATH" node node_modules/prisma/build/index.js db seed'
               echo "Seed complete"
             fi
 
