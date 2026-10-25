@@ -52,6 +52,10 @@ on:
         description: 'Runner label for the scan jobs. Defaults to GitHub-hosted ubuntu-latest so each scan gets an isolated workspace (a single self-hosted runner shares one workspace, and a container-based job checking out as root leaves files a later host job cannot git-clean). SAFE TO SET TO self-hosted for a call that runs the container scan alone (run-semgrep: false) — semgrep is the only container-based job, so without it nothing checks out as root. That is the shape deploy-qa uses to keep the per-commit image scan off billable minutes.'
         type: string
         default: 'ubuntu-latest'
+      light-scan-runner:
+        description: 'Optional runner label for the LIGHT jobs: TruffleHog, Trivy IaC and the summary. They run no `npm ci` and no container, so they need no memory-heavy runner. Empty (default) = same as scan-runner, i.e. the old behaviour. Lets a caller send the npm-ci jobs (Trivy deps, npm audit) to a dedicated runner (e.g. scan-runner: heavy) while the light ones run on any self-hosted runner and do not queue behind them.'
+        type: string
+        default: ''
       environment:
         description: 'GitHub environment to scope the container job to, so it can read an environment-scoped GHCR_TOKEN when pulling a pre-built private image (e.g. qa, production). Leave empty for no environment.'
         type: string
@@ -66,7 +70,7 @@ jobs:
   # Secret scanning - wykrywa przypadkowo commitnięte sekrety
   trufflehog:
     name: TruffleHog - Secret Scanning
-    runs-on: ${{ inputs.scan-runner }}
+    runs-on: ${{ inputs.light-scan-runner || inputs.scan-runner }}
     timeout-minutes: 10
     if: ${{ inputs.run-trufflehog }}
     steps:
@@ -245,7 +249,7 @@ jobs:
   # IaC scanning - sprawdza konfigurację Docker/Terraform
   trivy-iac:
     name: Trivy - IaC Scan
-    runs-on: ${{ inputs.scan-runner }}
+    runs-on: ${{ inputs.light-scan-runner || inputs.scan-runner }}
     timeout-minutes: 10
     if: ${{ inputs.run-trivy-iac }}
     steps:
@@ -298,7 +302,7 @@ jobs:
   # Podsumowanie wyników
   summary:
     name: Security Summary
-    runs-on: ${{ inputs.scan-runner }}
+    runs-on: ${{ inputs.light-scan-runner || inputs.scan-runner }}
     timeout-minutes: 5
     needs: [trufflehog, semgrep, trivy-deps, trivy-container, trivy-iac, npm-audit]
     if: always()
