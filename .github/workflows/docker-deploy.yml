@@ -59,6 +59,11 @@ on:
         type: string
         default: ""
         description: "Sentry project slug for release event (skipped if empty)"
+      runner:
+        required: false
+        type: string
+        default: "self-hosted"
+        description: "Runner label for the deploy job. Default keeps the old behaviour (any self-hosted runner). Callers that must not overlap heavy jobs on one machine pass a dedicated label (e.g. heavy)."
       environment:
         required: false
         type: string
@@ -94,7 +99,7 @@ on:
 
 jobs:
   deploy:
-    runs-on: self-hosted
+    runs-on: ${{ inputs.runner }}
     environment: ${{ inputs.environment }}
     # Bez tego job leci na domyślnych 360 min. Na self-hosted runnerze (jeden na
     # organizację) zawieszony deploy blokuje WSZYSTKO, co czeka w kolejce — crony
